@@ -283,6 +283,7 @@ function analyze(rows,settings){
       leaveHrs,leaveType,backfilled,anomaly,special:sp?sp.mode:null,spNote:sp?(sp.note||''):'',effStart:null,effEnd:null};
     const isRest=REST_TYPES.includes(dayType)||schedStart==null||schedEnd==null;
     const isOff=!!(sp&&sp.mode==='off');
+    const noOT=!!(sp&&sp.noOT);
     if(sp&&sp.mode==='adjust'&&!isRest){
       const as=toMin(sp.start),ae=toMin(sp.end);
       if(as!=null)schedStart=as;if(ae!=null)schedEnd=ae;
@@ -296,9 +297,14 @@ function analyze(rows,settings){
         worked=Math.max(0,worked);
         day.otRaw=worked;
         if(S.otMode==='unit')worked=Math.floor(worked/30)*30;
-        day.ot=worked;day.otKind=isOff?'special':'rest';
-        if(isOff){P.otSpecialMin+=worked;day.status.push('停班日出勤'+(sp&&sp.note?'·'+sp.note:''));}
-        else{P.otRestMin+=worked;day.status.push('休息日出勤');}
+        if(noOT){
+          day.ot=0;day.otKind=null;
+          day.status.push((isOff?'停班日出勤':'休息日出勤')+'·不計加班'+(sp&&sp.note?'·'+sp.note:''));
+        }else{
+          day.ot=worked;day.otKind=isOff?'special':'rest';
+          if(isOff){P.otSpecialMin+=worked;day.status.push('停班日出勤'+(sp&&sp.note?'·'+sp.note:''));}
+          else{P.otRestMin+=worked;day.status.push('休息日出勤');}
+        }
         P.workedDays++;
       }else if(inT!=null||outT!=null){
         day.status.push('未打卡(單邊)');P.missing++;
@@ -343,7 +349,9 @@ function analyze(rows,settings){
     const extra=Math.max(0,effStart-inT)+Math.max(0,outT-effEnd);
     day.otRaw=extra;
     const otv=roundOT(extra,S);
-    if(otv>0){
+    if(noOT&&extra>0){
+      day.status.push('超時'+extra+'分·特殊日不計加班');
+    }else if(otv>0){
       day.ot=otv;day.otKind='week';P.otWeekMin+=otv;
       day.status.push('加班'+fmtHM(otv)+(extra>otv?'(實計'+extra+'分)':''));
     }else if(extra>0){day.status.push('超時'+extra+'分(未達計算單位)');}
@@ -433,22 +441,32 @@ function renderSpecialDays(){
     mode.innerHTML='<option value="off">整天停班</option><option value="adjust">調整上下班時間</option>';
     mode.value=sp.mode||'off';
     const times=document.createElement('div');times.className='sp-times';
-    const ts=document.createElement('input');ts.type='time';ts.value=sp.start||'';ts.title='調整後上班時間（留空＝不變）';
-    const te=document.createElement('input');te.type='time';te.value=sp.end||'';te.title='調整後下班時間（留空＝不變）';
+    const hourSel=(val,label)=>{
+      const s=document.createElement('select');
+      let h='<option value="">'+label+'（不變）</option>';
+      for(let i=0;i<24;i++){const hh=String(i).padStart(2,'0');h+='<option value="'+hh+':00">'+hh+':00</option>';}
+      s.innerHTML=h;s.value=val||'';return s;
+    };
+    const ts=hourSel(sp.start,'上班時間');
+    const te=hourSel(sp.end,'下班時間');
     ts.onchange=()=>{sp.start=ts.value;store.set(settings);recalc();};
     te.onchange=()=>{sp.end=te.value;store.set(settings);recalc();};
     times.appendChild(ts);times.appendChild(te);
+    const noOtLb=document.createElement('label');noOtLb.className='check';noOtLb.style.margin='8px 0 0';
+    const noOtCb=document.createElement('input');noOtCb.type='checkbox';noOtCb.checked=!!sp.noOT;
+    noOtCb.onchange=()=>{sp.noOT=noOtCb.checked;store.set(settings);recalc();};
+    noOtLb.appendChild(noOtCb);noOtLb.appendChild(document.createTextNode('當日不計加班'));
     const syncTimes=()=>{times.style.display=mode.value==='adjust'?'grid':'none';};
     mode.onchange=()=>{sp.mode=mode.value;syncTimes();store.set(settings);recalc();};
     const note=document.createElement('input');note.type='text';note.placeholder='備註（例：颱風提早下班）';note.value=sp.note||'';
     note.style.cssText='width:100%;margin-top:6px;border:1px solid var(--line);border-radius:6px;padding:6px 9px;font:inherit;font-size:13px';
     note.onchange=()=>{sp.note=note.value;store.set(settings);recalc();};
-    div.appendChild(mode);div.appendChild(times);div.appendChild(note);
+    div.appendChild(mode);div.appendChild(times);div.appendChild(noOtLb);div.appendChild(note);
     syncTimes();
     box.appendChild(div);
   });
 }
-$('btnAddSp').onclick=()=>{settings.specialDays.push({date:'',depts:[],mode:'off',start:'',end:'',note:''});store.set(settings);renderSpecialDays();};
+$('btnAddSp').onclick=()=>{settings.specialDays.push({date:'',depts:[],mode:'off',start:'',end:'',noOT:false,note:''});store.set(settings);renderSpecialDays();};
 
 /* 設定匯出/匯入 */
 $('btnExportSettings').onclick=()=>{
