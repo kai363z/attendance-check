@@ -142,7 +142,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
   tr.prow{break-inside:avoid}
   .bar{display:none}
   .tag{border:1px solid #999;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  #pendingCard{break-before:auto}
+  #pendingCard{display:none!important}
   .legend{font-size:9px;margin-top:8px}
 }
 @media(max-width:600px){.bar{width:110px}}
@@ -248,7 +248,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
 </div>
 
 <script>
-const APP_VERSION='v1.7 (2026-07-31)';
+const APP_VERSION='v1.8 (2026-07-31)';
 /* ==================== 檢核引擎 ==================== */
 function toMin(s){if(s==null)return null;s=String(s).trim();if(!s||s==='--')return null;
   const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);if(!m)return null;
