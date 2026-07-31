@@ -24,6 +24,7 @@ header{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 16px;padding:6p
 header h1{font-size:24px;font-weight:900;letter-spacing:2px}
 header h1 span{color:var(--teal)}
 .month-chip{font-family:var(--mono);font-size:13px;font-weight:600;border:1.5px solid var(--ink);padding:2px 10px;border-radius:3px}
+.ver-chip{font-family:var(--mono);font-size:12px;font-weight:600;color:#fff;background:var(--teal);padding:2px 8px;border-radius:3px}
 header .spacer{flex:1}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);
   font:inherit;font-weight:700;font-size:13.5px;padding:7px 14px;border-radius:6px;cursor:pointer;transition:.12s}
@@ -132,6 +133,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
 <div class="wrap">
 <header>
   <h1>凱味香<span>｜</span>出勤時數檢核</h1>
+  <span class="ver-chip" id="verChip"></span>
   <span class="month-chip" id="monthChip">尚未載入</span>
   <span class="spacer"></span>
   <button class="btn" id="btnExportSettings">匯出設定</button>
@@ -217,7 +219,8 @@ tr.prow.open .caret{transform:rotate(90deg)}
       <div class="legend">
         <b>計算規則：</b>彈性採「雙向平移」——早到早走、晚到晚走（上限依設定）：實際上班時間在彈性範圍內即等量平移有效下班時間；超出有效時段的工作時間依計算單位計加班。
         遲到僅在晚到超過彈性上限時計；早退以平移後的有效下班時間判定。整天請假不檢核；頭尾時段請假會先修剪應到時間；中段請假標記人工確認。
-        休息日／例假日有完整打卡即列休息日加班；特殊日「停班」當日出勤列入特殊日時數。單邊打卡不計時數，列入待處理清單。
+        休息日／例假日有完整打卡即列休息日加班，並計入加班合計；特殊日「停班」當日出勤列入特殊日時數。單邊打卡不計時數，列入待處理清單。
+        <br><span style="font-family:var(--mono)">版本 <span id="verFoot"></span></span>
       </div>
     </div>
   </div>
@@ -225,6 +228,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
 </div>
 
 <script>
+const APP_VERSION='v1.6 (2026-07-31)';
 /* ==================== 檢核引擎 ==================== */
 function toMin(s){if(s==null)return null;s=String(s).trim();if(!s||s==='--')return null;
   const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);if(!m)return null;
@@ -681,6 +685,9 @@ $('btnExcel').onclick=()=>{
 };
 
 /* init */
+document.getElementById('verChip').textContent=APP_VERSION;
+document.getElementById('verFoot').textContent=APP_VERSION;
+document.title='凱味香｜出勤時數檢核 '+APP_VERSION;
 writeSettingsToUI();
 </script>
 </body>
