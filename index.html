@@ -152,16 +152,15 @@ tr.prow.open .caret{transform:rotate(90deg)}
 
     <div class="card" style="margin-top:14px">
       <h2>檢核規則</h2>
-      <div class="row2">
-        <div class="field"><label>彈性上限（分鐘）</label><input type="number" id="flexCap" value="120" min="0" step="10"></div>
-        <div class="field"><label>加班門檻（分鐘）</label><input type="number" id="otThreshold" value="30" min="0" step="5"></div>
-      </div>
-      <div class="field"><label>超過門檻時的計算方式</label>
+      <div class="field"><label>彈性上限（分鐘）</label><input type="number" id="flexCap" value="120" min="0" step="10"></div>
+      <div class="field"><label>加班計算方式</label>
         <select id="otMode">
-          <option value="full">全額計入（超過 30 分即全部算加班）</option>
-          <option value="excess">僅計超過門檻的部分</option>
+          <option value="unit">每日以 0.5 小時為單位（未滿 30 分捨去）</option>
+          <option value="full">實際分鐘：超過門檻即全額計</option>
+          <option value="excess">實際分鐘：僅計超過門檻部分</option>
         </select>
       </div>
+      <div class="field" id="thresholdField"><label>加班門檻（分鐘，僅「實際分鐘」模式使用）</label><input type="number" id="otThreshold" value="30" min="0" step="5"></div>
       <label class="check"><input type="checkbox" id="restDayBreak" checked>休息日／例假日出勤超過 5 小時，扣除 60 分鐘休息</label>
       <div class="field"><label>排除員工（不列入檢核）</label>
         <input type="text" id="exclInput" placeholder="輸入員編後按 Enter，例：001">
@@ -200,7 +199,8 @@ tr.prow.open .caret{transform:rotate(90deg)}
               <th style="text-align:right">排班天</th><th style="text-align:right">出勤天</th>
               <th style="text-align:right">曠職</th><th style="text-align:right">遲到</th><th style="text-align:right">早退</th>
               <th style="text-align:right">平日加班</th><th style="text-align:right">休日加班</th><th style="text-align:right">特殊日</th>
-              <th style="text-align:right">請假</th><th style="text-align:right">未打卡</th>
+              <th style="text-align:right">特休</th><th style="text-align:right">事假</th><th style="text-align:right">病假</th><th style="text-align:right">其他假</th>
+              <th style="text-align:right">未打卡</th>
             </tr></thead>
             <tbody id="sumBody"></tbody>
           </table>
@@ -239,6 +239,17 @@ function normDate(s){if(s==null)return null;s=String(s).trim();
   const m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);if(!m)return null;
   return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');}
 const REST_TYPES=['休息日','例假日','國定假日'];
+function roundOT(min,S){
+  if(min<=0)return 0;
+  if(S.otMode==='unit')return Math.floor(min/30)*30;
+  if(S.otMode==='excess')return min>S.otThreshold?min-S.otThreshold:0;
+  return min>S.otThreshold?min:0;
+}
+function fmtDays(min){
+  if(!min)return '–';
+  const d=Math.round(min/480*100)/100;
+  return d+'天';
+}
 
 function analyze(rows,settings){
   const S=Object.assign({flexCap:120,otThreshold:30,otMode:'full',excluded:[],restDayBreak:true,specialDays:[]},settings);
@@ -283,6 +294,8 @@ function analyze(rows,settings){
         let worked=outT-inT;
         if(S.restDayBreak&&worked>300)worked-=60;
         worked=Math.max(0,worked);
+        day.otRaw=worked;
+        if(S.otMode==='unit')worked=Math.floor(worked/30)*30;
         day.ot=worked;day.otKind=isOff?'special':'rest';
         if(isOff){P.otSpecialMin+=worked;day.status.push('停班日出勤'+(sp&&sp.note?'·'+sp.note:''));}
         else{P.otRestMin+=worked;day.status.push('休息日出勤');}
@@ -328,11 +341,12 @@ function analyze(rows,settings){
     if(inT>expStart){day.late=inT-expStart;P.lateMin+=day.late;P.lateCnt++;day.status.push('遲到'+day.late+'分');}
     if(outT<effEnd){day.early=effEnd-outT;P.earlyMin+=day.early;P.earlyCnt++;day.status.push('早退'+day.early+'分');}
     const extra=Math.max(0,effStart-inT)+Math.max(0,outT-effEnd);
-    if(extra>S.otThreshold){
-      day.ot=S.otMode==='excess'?extra-S.otThreshold:extra;
-      day.otKind='week';P.otWeekMin+=day.ot;
-      day.status.push('加班'+fmtHM(day.ot));
-    }else if(extra>0){day.status.push('超時'+extra+'分(未達門檻)');}
+    day.otRaw=extra;
+    const otv=roundOT(extra,S);
+    if(otv>0){
+      day.ot=otv;day.otKind='week';P.otWeekMin+=otv;
+      day.status.push('加班'+fmtHM(otv)+(extra>otv?'(實計'+extra+'分)':''));
+    }else if(extra>0){day.status.push('超時'+extra+'分(未達計算單位)');}
     if(backfilled)day.status.push('補登');
     if(day.status.length===0)day.status.push('正常');
     P.days.push(day);
@@ -348,8 +362,9 @@ const store={
   get(){try{const s=localStorage.getItem('kwx-attn-settings');return s?JSON.parse(s):null;}catch(e){return null;}},
   set(o){try{localStorage.setItem('kwx-attn-settings',JSON.stringify(o));}catch(e){}}
 };
-const DEFAULT_SETTINGS={flexCap:120,otThreshold:30,otMode:'full',restDayBreak:true,excluded:['001'],specialDays:[]};
+const DEFAULT_SETTINGS={flexCap:120,otThreshold:30,otMode:'unit',restDayBreak:true,excluded:['001'],specialDays:[]};
 let settings=Object.assign({},DEFAULT_SETTINGS,store.get()||{});
+if(!settings.v2){settings.otMode='unit';settings.v2=true;store.set(settings);}
 
 const $=id=>document.getElementById(id);
 
@@ -365,8 +380,11 @@ function writeSettingsToUI(){
   $('otThreshold').value=settings.otThreshold;
   $('otMode').value=settings.otMode;
   $('restDayBreak').checked=!!settings.restDayBreak;
+  syncThreshold();
   renderExcl();renderSpecialDays();
 }
+function syncThreshold(){$('thresholdField').style.display=$('otMode').value==='unit'?'none':'block';}
+$('otMode').addEventListener('change',syncThreshold);
 
 /* 排除員工 chips */
 function renderExcl(){
@@ -495,6 +513,16 @@ function recalc(){
   render();
 }
 
+const MAIN_LEAVES=['特休','事假','病假'];
+function leaveCell(p,type){
+  const m=p.leaveByType[type]||0;
+  return '<td class="num '+(m?'warn':'dim')+'"'+(m?' title="'+fmtHM(m)+'小時"':'')+'>'+fmtDays(m)+'</td>';
+}
+function otherLeaveCell(p){
+  let m=0,names=[];
+  for(const[k,v]of Object.entries(p.leaveByType))if(!MAIN_LEAVES.includes(k)){m+=v;names.push(k+' '+fmtHM(v));}
+  return '<td class="num '+(m?'warn':'dim')+'"'+(m?' title="'+escapeHtml(names.join('、'))+'"':'')+'>'+fmtDays(m)+'</td>';
+}
 function render(){
   $('empty').hidden=true;$('results').hidden=false;$('btnExcel').disabled=false;
   const ps=result.people;
@@ -526,10 +554,10 @@ function render(){
       '<td class="num '+(p.otWeekMin?'pos':'dim')+'">'+(p.otWeekMin?fmtHM(p.otWeekMin):'–')+'</td>'+
       '<td class="num '+(p.otRestMin?'pos':'dim')+'">'+(p.otRestMin?fmtHM(p.otRestMin):'–')+'</td>'+
       '<td class="num '+(p.otSpecialMin?'pos':'dim')+'">'+(p.otSpecialMin?fmtHM(p.otSpecialMin):'–')+'</td>'+
-      '<td class="num '+(p.leaveMin?'warn':'dim')+'">'+(p.leaveMin?fmtHM(p.leaveMin):'–')+'</td>'+
+      leaveCell(p,'特休')+leaveCell(p,'事假')+leaveCell(p,'病假')+otherLeaveCell(p)+
       '<td class="num '+(p.missing?'bad':'dim')+'">'+(p.missing||'–')+'</td>';
     const dtr=document.createElement('tr');dtr.className='detail';dtr.hidden=true;
-    const td=document.createElement('td');td.colSpan=13;
+    const td=document.createElement('td');td.colSpan=16;
     td.innerHTML='<div class="inner">'+detailTable(p)+'</div>';
     dtr.appendChild(td);
     tr.onclick=()=>{dtr.hidden=!dtr.hidden;tr.classList.toggle('open',!dtr.hidden);};
@@ -598,11 +626,15 @@ function timeBar(d){
 $('btnExcel').onclick=()=>{
   if(!result)return;
   const wb=XLSX.utils.book_new();
-  const sum=[['員工編號','姓名','部門','排班天數','出勤天數','曠職天數','曠職日期','遲到次數','遲到分鐘','早退次數','早退分鐘','平日加班','休息日加班','特殊日時數','請假時數','請假明細','未打卡筆數']];
+  const dayN=m=>m?Math.round(m/480*100)/100:0;
+  const sum=[['員工編號','姓名','部門','排班天數','出勤天數','曠職天數','曠職日期','遲到次數','遲到分鐘','早退次數','早退分鐘','平日加班','休息日加班','特殊日時數','特休(天)','事假(天)','病假(天)','其他假(天)','請假總時數','未打卡筆數']];
   for(const p of result.people){
+    let other=0;
+    for(const[k,v]of Object.entries(p.leaveByType))if(!MAIN_LEAVES.includes(k))other+=v;
     sum.push([p.id,p.name,p.dept,p.schedDays,p.workedDays,p.absentDays.length,p.absentDays.join('、'),
       p.lateCnt,p.lateMin,p.earlyCnt,p.earlyMin,fmtHM(p.otWeekMin),fmtHM(p.otRestMin),fmtHM(p.otSpecialMin),
-      fmtHM(p.leaveMin),Object.entries(p.leaveByType).map(([k,v])=>k+' '+fmtHM(v)).join('、'),p.missing]);
+      dayN(p.leaveByType['特休']||0),dayN(p.leaveByType['事假']||0),dayN(p.leaveByType['病假']||0),dayN(other),
+      fmtHM(p.leaveMin),p.missing]);
   }
   const ws1=XLSX.utils.aoa_to_sheet(sum);
   ws1['!cols']=sum[0].map((_,i)=>({wch:i===6||i===15?24:10}));
