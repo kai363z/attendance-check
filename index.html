@@ -182,8 +182,9 @@ tr.prow.open .caret{transform:rotate(90deg)}
 
     <div id="results" hidden>
       <div class="kpis">
-        <div class="kpi b"><div class="v" id="kOtWeek">--</div><div class="l">平日加班合計</div></div>
-        <div class="kpi b"><div class="v" id="kOtRest">--</div><div class="l">休息日加班合計</div></div>
+        <div class="kpi b"><div class="v" id="kOtTotal">--</div><div class="l">加班總時數</div></div>
+        <div class="kpi b"><div class="v" id="kOtWeek">--</div><div class="l">其中平日</div></div>
+        <div class="kpi b"><div class="v" id="kOtRest">--</div><div class="l">其中休日／特殊日</div></div>
         <div class="kpi r"><div class="v" id="kAbsent">--</div><div class="l">曠職天數合計</div></div>
         <div class="kpi y"><div class="v" id="kLeave">--</div><div class="l">請假時數合計</div></div>
         <div class="kpi r"><div class="v" id="kPending">--</div><div class="l">未打卡待處理</div></div>
@@ -198,7 +199,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
               <th>員編</th><th>姓名</th><th>部門</th>
               <th style="text-align:right">排班天</th><th style="text-align:right">出勤天</th>
               <th style="text-align:right">曠職</th><th style="text-align:right">遲到</th><th style="text-align:right">早退</th>
-              <th style="text-align:right">平日加班</th><th style="text-align:right">休日加班</th><th style="text-align:right">特殊日</th>
+              <th style="text-align:right">平日加班</th><th style="text-align:right">休日加班</th><th style="text-align:right">特殊日</th><th style="text-align:right"><b>加班合計</b></th>
               <th style="text-align:right">特休</th><th style="text-align:right">事假</th><th style="text-align:right">病假</th><th style="text-align:right">其他假</th>
               <th style="text-align:right">未打卡</th>
             </tr></thead>
@@ -214,8 +215,8 @@ tr.prow.open .caret{transform:rotate(90deg)}
       </div>
 
       <div class="legend">
-        <b>計算規則：</b>彈性採「早到早走」——提早打卡（上限依設定）即等量提早有效下班時間；超出有效時段的工作時間累計超過門檻才計加班。
-        遲到以表定上班時間判定；早退以彈性平移後的有效下班時間判定。整天請假不檢核；頭尾時段請假會先修剪應到時間；中段請假標記人工確認。
+        <b>計算規則：</b>彈性採「雙向平移」——早到早走、晚到晚走（上限依設定）：實際上班時間在彈性範圍內即等量平移有效下班時間；超出有效時段的工作時間依計算單位計加班。
+        遲到僅在晚到超過彈性上限時計；早退以平移後的有效下班時間判定。整天請假不檢核；頭尾時段請假會先修剪應到時間；中段請假標記人工確認。
         休息日／例假日有完整打卡即列休息日加班；特殊日「停班」當日出勤列入特殊日時數。單邊打卡不計時數，列入待處理清單。
       </div>
     </div>
@@ -341,10 +342,11 @@ function analyze(rows,settings){
     }
     P.workedDays++;
     let shift=0;
-    if(inT<expStart)shift=Math.min(expStart-inT,S.flexCap);
-    const effStart=expStart-shift,effEnd=expEnd-shift;
+    if(inT<expStart)shift=-Math.min(expStart-inT,S.flexCap);
+    else if(inT>expStart)shift=Math.min(inT-expStart,S.flexCap);
+    const effStart=expStart+shift,effEnd=expEnd+shift;
     day.effStart=effStart;day.effEnd=effEnd;
-    if(inT>expStart){day.late=inT-expStart;P.lateMin+=day.late;P.lateCnt++;day.status.push('遲到'+day.late+'分');}
+    if(inT>effStart){day.late=inT-effStart;P.lateMin+=day.late;P.lateCnt++;day.status.push('遲到'+day.late+'分(超過彈性上限)');}
     if(outT<effEnd){day.early=effEnd-outT;P.earlyMin+=day.early;P.earlyCnt++;day.status.push('早退'+day.early+'分');}
     const extra=Math.max(0,effStart-inT)+Math.max(0,outT-effEnd);
     day.otRaw=extra;
@@ -544,6 +546,7 @@ function otherLeaveCell(p){
 function render(){
   $('empty').hidden=true;$('results').hidden=false;$('btnExcel').disabled=false;
   const ps=result.people;
+  $('kOtTotal').textContent=fmtHM(ps.reduce((s,p)=>s+p.otWeekMin+p.otRestMin+p.otSpecialMin,0));
   $('kOtWeek').textContent=fmtHM(ps.reduce((s,p)=>s+p.otWeekMin,0));
   $('kOtRest').textContent=fmtHM(ps.reduce((s,p)=>s+p.otRestMin+p.otSpecialMin,0));
   $('kAbsent').textContent=ps.reduce((s,p)=>s+p.absentDays.length,0)+' 天';
@@ -572,10 +575,11 @@ function render(){
       '<td class="num '+(p.otWeekMin?'pos':'dim')+'">'+(p.otWeekMin?fmtHM(p.otWeekMin):'–')+'</td>'+
       '<td class="num '+(p.otRestMin?'pos':'dim')+'">'+(p.otRestMin?fmtHM(p.otRestMin):'–')+'</td>'+
       '<td class="num '+(p.otSpecialMin?'pos':'dim')+'">'+(p.otSpecialMin?fmtHM(p.otSpecialMin):'–')+'</td>'+
+      (function(){const t=p.otWeekMin+p.otRestMin+p.otSpecialMin;return '<td class="num '+(t?'pos':'dim')+'" style="font-weight:700">'+(t?fmtHM(t):'–')+'</td>';})()+
       leaveCell(p,'特休')+leaveCell(p,'事假')+leaveCell(p,'病假')+otherLeaveCell(p)+
       '<td class="num '+(p.missing?'bad':'dim')+'">'+(p.missing||'–')+'</td>';
     const dtr=document.createElement('tr');dtr.className='detail';dtr.hidden=true;
-    const td=document.createElement('td');td.colSpan=16;
+    const td=document.createElement('td');td.colSpan=17;
     td.innerHTML='<div class="inner">'+detailTable(p)+'</div>';
     dtr.appendChild(td);
     tr.onclick=()=>{dtr.hidden=!dtr.hidden;tr.classList.toggle('open',!dtr.hidden);};
@@ -645,12 +649,12 @@ $('btnExcel').onclick=()=>{
   if(!result)return;
   const wb=XLSX.utils.book_new();
   const dayN=m=>m?Math.round(m/480*100)/100:0;
-  const sum=[['員工編號','姓名','部門','排班天數','出勤天數','曠職天數','曠職日期','遲到次數','遲到分鐘','早退次數','早退分鐘','平日加班','休息日加班','特殊日時數','特休(天)','事假(天)','病假(天)','其他假(天)','請假總時數','未打卡筆數']];
+  const sum=[['員工編號','姓名','部門','排班天數','出勤天數','曠職天數','曠職日期','遲到次數','遲到分鐘','早退次數','早退分鐘','平日加班','休息日加班','特殊日時數','加班總時數','特休(天)','事假(天)','病假(天)','其他假(天)','請假總時數','未打卡筆數']];
   for(const p of result.people){
     let other=0;
     for(const[k,v]of Object.entries(p.leaveByType))if(!MAIN_LEAVES.includes(k))other+=v;
     sum.push([p.id,p.name,p.dept,p.schedDays,p.workedDays,p.absentDays.length,p.absentDays.join('、'),
-      p.lateCnt,p.lateMin,p.earlyCnt,p.earlyMin,fmtHM(p.otWeekMin),fmtHM(p.otRestMin),fmtHM(p.otSpecialMin),
+      p.lateCnt,p.lateMin,p.earlyCnt,p.earlyMin,fmtHM(p.otWeekMin),fmtHM(p.otRestMin),fmtHM(p.otSpecialMin),fmtHM(p.otWeekMin+p.otRestMin+p.otSpecialMin),
       dayN(p.leaveByType['特休']||0),dayN(p.leaveByType['事假']||0),dayN(p.leaveByType['病假']||0),dayN(other),
       fmtHM(p.leaveMin),p.missing]);
   }
