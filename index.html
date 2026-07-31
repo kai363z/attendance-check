@@ -126,6 +126,25 @@ tr.prow.open .caret{transform:rotate(90deg)}
 #empty{padding:60px 20px;text-align:center;color:var(--muted)}
 #empty .big{font-size:44px;margin-bottom:8px}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  @page{size:A4 landscape;margin:10mm}
+  body{background:#fff;font-size:11px}
+  .side,header .btn,#deptFilter,#drop,#empty{display:none!important}
+  main{display:block}
+  .wrap{max-width:none;padding:0}
+  header{border-bottom-width:2px;padding-bottom:8px}
+  .card{border:none;padding:6px 0;break-inside:avoid}
+  .kpis{grid-template-columns:repeat(5,1fr);gap:6px}
+  .kpi{padding:6px 8px}.kpi .v{font-size:16px}
+  table{font-size:10px}
+  th{background:#333!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;position:static}
+  td,th{padding:3px 6px}
+  tr.prow{break-inside:avoid}
+  .bar{display:none}
+  .tag{border:1px solid #999;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  #pendingCard{break-before:auto}
+  .legend{font-size:9px;margin-top:8px}
+}
 @media(max-width:600px){.bar{width:110px}}
 </style>
 </head>
@@ -138,6 +157,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
   <span class="spacer"></span>
   <button class="btn" id="btnExportSettings">匯出設定</button>
   <button class="btn" id="btnImportSettings">匯入設定</button>
+  <button class="btn" id="btnPrint" disabled>列印報表</button>
   <button class="btn primary" id="btnExcel" disabled>匯出 Excel 報表</button>
   <input type="file" id="settingsFile" accept=".json" hidden>
 </header>
@@ -228,7 +248,7 @@ tr.prow.open .caret{transform:rotate(90deg)}
 </div>
 
 <script>
-const APP_VERSION='v1.6 (2026-07-31)';
+const APP_VERSION='v1.7 (2026-07-31)';
 /* ==================== 檢核引擎 ==================== */
 function toMin(s){if(s==null)return null;s=String(s).trim();if(!s||s==='--')return null;
   const m=s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);if(!m)return null;
@@ -252,8 +272,11 @@ function roundOT(min,S){
 }
 function fmtDays(min){
   if(!min)return '–';
-  const d=Math.round(min/480*100)/100;
-  return d+'天';
+  const d=Math.floor(min/480), rem=min-d*480;
+  const h=Math.round(rem/30)/2; // 剩餘以0.5小時呈現
+  if(d&&h)return d+'天'+h+'時';
+  if(d)return d+'天';
+  return h+'時';
 }
 
 function analyze(rows,settings){
@@ -548,7 +571,7 @@ function otherLeaveCell(p){
   return '<td class="num '+(m?'warn':'dim')+'"'+(m?' title="'+escapeHtml(names.join('、'))+'"':'')+'>'+fmtDays(m)+'</td>';
 }
 function render(){
-  $('empty').hidden=true;$('results').hidden=false;$('btnExcel').disabled=false;
+  $('empty').hidden=true;$('results').hidden=false;$('btnExcel').disabled=false;$('btnPrint').disabled=false;
   const ps=result.people;
   $('kOtTotal').textContent=fmtHM(ps.reduce((s,p)=>s+p.otWeekMin+p.otRestMin+p.otSpecialMin,0));
   $('kOtWeek').textContent=fmtHM(ps.reduce((s,p)=>s+p.otWeekMin,0));
@@ -652,8 +675,9 @@ function timeBar(d){
 $('btnExcel').onclick=()=>{
   if(!result)return;
   const wb=XLSX.utils.book_new();
-  const dayN=m=>m?Math.round(m/480*100)/100:0;
-  const sum=[['員工編號','姓名','部門','排班天數','出勤天數','曠職天數','曠職日期','遲到次數','遲到分鐘','早退次數','早退分鐘','平日加班','休息日加班','特殊日時數','加班總時數','特休(天)','事假(天)','病假(天)','其他假(天)','請假總時數','未打卡筆數']];
+  const dayN=m=>{if(!m)return '';const d=Math.floor(m/480),rem=m-d*480,h=Math.round(rem/30)/2;
+    return (d?d+'天':'')+(h?h+'時':'')||'';};
+  const sum=[['員工編號','姓名','部門','排班天數','出勤天數','曠職天數','曠職日期','遲到次數','遲到分鐘','早退次數','早退分鐘','平日加班','休息日加班','特殊日時數','加班總時數','特休(天/時)','事假(天/時)','病假(天/時)','其他假(天/時)','請假總時數','未打卡筆數']];
   for(const p of result.people){
     let other=0;
     for(const[k,v]of Object.entries(p.leaveByType))if(!MAIN_LEAVES.includes(k))other+=v;
@@ -684,6 +708,7 @@ $('btnExcel').onclick=()=>{
   XLSX.writeFile(wb,'出勤檢核_'+(monthLabel?monthLabel.slice(0,7):'')+'.xlsx');
 };
 
+$('btnPrint').onclick=()=>window.print();
 /* init */
 document.getElementById('verChip').textContent=APP_VERSION;
 document.getElementById('verFoot').textContent=APP_VERSION;
